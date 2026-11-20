@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rain World lizards</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; overflow: hidden; font-family: monospace; }
+  #c { display: block; width: 100vw; height: 100vh; }
+  #help select { pointer-events: auto; background: #1b2427; color: #cfd8d6; border: 1px solid #456; }
+  #help { position: fixed; left: 10px; top: 8px; color: #cfd8d6; font-size: 12px; line-height: 1.5; pointer-events: none; text-shadow: 0 0 3px #000; }
+  #hud { color: #9fb; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="help">
+  <b>Rain World lizards</b> — port of Lizard / LizardAI &nbsp; breed: <select id="breed"></select><br>
+  A/D or ←/→ move &nbsp; W / Space jump &nbsp; W/S on a pole climb &nbsp; drag the white blob with the mouse to throw it<br>
+  D debug view &nbsp; T sprites/procedural &nbsp; M mute &nbsp; L spawn lizard at cursor &nbsp; R reset &nbsp; P pause<br>
+  <span id="hud"></span>
+</div>
+<script src="assets/rainWorld.json.js"></script>
+<script src="util.js"></script>
+<script src="sprites.js"></script>
+<script src="room.js"></script>
+<script src="aimap.js"></script>
+<script src="pather.js"></script>
+<script src="physics.js"></script>
+<script src="bodyparts.js"></script>
+<script src="breeds.js"></script>
+<script src="level.js"></script>
+<script src="prey.js"></script>
+<script src="tongue.js"></script>
+<script src="jump.js"></script>
+<script src="lizardai.js"></script>
+<script src="graphics.js"></script>
+<script src="assets/voice_data.js"></script>
+<script src="assets/sfx_data.js"></script>
+<script src="voice.js"></script>
+<script src="lizard.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
