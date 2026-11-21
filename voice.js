@@ -56,7 +56,7 @@ class LizardVoice {
     this.soundID = null; this.lastSoundID = null; this.vol = 1; this.ptch = 1; this.src = null; this.savedIntensity = 0;
     withSeed(lizard.seed, () => {
       this.clip = 'ABCDE'[rndInt(0, 5)];
-      this.myPitch = C.clampedRandomVariation(0.5, 0.2) * 2;       // ClampedRandomVariation(0.5, 0.2, 0.8) * 2
+      this.myPitch = C.clampedRandomVariation(0.5, 0.2, 0.8) * 2;
       const num = lerp(0.5, 1.5, rnd()), num2 = lerp(0.7, 1.3, rnd());
       const base = new VoiceArticulation(80, 1);
       this.articulations = Emotion.map((name, i) => {

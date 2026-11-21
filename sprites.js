@@ -18,7 +18,7 @@ const Atlas = {
   },
   // x,y in (y-up) world; rot = Futile rotation (deg, clockwise); anchor default 0.5
   draw(ctx, name, x, y, rot, scaleX, scaleY, rgb, ax = 0.5, ay = 0.5) {
-    const e = this.el(name); if (!e) return;
+    if (!this.ready) return; const e = this.el(name); if (!e) return;
     const cv = this.tinted(name, C.rgb(rgb)), r = rot / RAD2DEG, cs = Math.cos(r), sn = Math.sin(r);
     ctx.save();
     // image-right -> compass 90+rot, image-down -> opposite of compass rot (world is y-up here)

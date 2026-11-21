@@ -73,9 +73,18 @@ class Lizard extends Creature {
     this.voice = new LizardVoice(this);
     this.breed = breed;
     // Lizard ctor: effectColor = standardColor, then per breed a seeded random hue
-    const HUE = { pink: [0.87, 0.1, 0.5], green: [0.32, 0.1, 0.5], blue: [0.57, 0.08, 0.5], yellow: [0.1, 0.05, 0.5], salamander: [0.9, 0.15, 0.4], red: [0.0025, 0.02, 0.5], cyan: [0.49, 0.04, 0.5] }[breed];
-    this.effectColor = HUE ? withSeed(seed, () => C.hsl2rgb(C.wrappedRandomVariation(HUE[0], HUE[1]), 1, C.clampedRandomVariation(HUE[2], 0.15))) : this.lizardParams.standardColor.slice();
+    const HUE = { /* [hue, hueDev, lightness, lightnessK] */ pink: [0.87, 0.1, 0.5, 0.1], green: [0.32, 0.1, 0.5, 0.1], blue: [0.57, 0.08, 0.5, 0.1], yellow: [0.1, 0.05, 0.5, 0.1], salamander: [0.9, 0.15, 0.4, 0.2], red: [0.0025, 0.02, 0.5, 0.1], cyan: [0.49, 0.04, 0.5, 0.1] }[breed];
+    this.effectColor = HUE ? withSeed(seed, () => C.hsl2rgb(C.wrappedRandomVariation(HUE[0], HUE[1], 0.6), 1, C.clampedRandomVariation(HUE[2], 0.15, HUE[3]))) : this.lizardParams.standardColor.slice();
     this.tongue = P.tongue ? new LizardTongue(this) : null;
+    // AbstractCreature.Personality (seeded from the creature ID)
+    this.personality = withSeed(seed + 5, () => {
+      const push = C.pushFromHalf;
+      let sympathy = push(rnd(), 1.5), energy = push(rnd(), 1.5), bravery = push(rnd(), 1.5);
+      let nervous = lerp(rnd(), lerp(energy, 1 - bravery, 0.5), Math.pow(rnd(), 0.25));
+      let aggression = lerp(rnd(), (energy + bravery) / 2 * (1 - sympathy), Math.pow(rnd(), 0.25));
+      const dominance = lerp(rnd(), (energy + bravery + aggression) / 3, Math.pow(rnd(), 0.25));
+      return { sympathy, energy, bravery, dominance, nervous: push(nervous, 2.5), aggression: push(aggression, 2.5) };
+    });
     this.AI = new LizardAI(this);
     this.jumpModule = breed === 'cyan' ? new LizardJumpModule(this) : null;
     this.graphics = new LizardGraphics(this);

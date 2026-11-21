@@ -26,6 +26,7 @@ class LizardAI {
     this.lizard = lizard; this.room = lizard.room;
     this.pather = new Pather(this.room, this.room.aimap, lizard.lizardParams);
     this.stuckTracker = new StuckTracker(this);
+    this.yellowAI = lizard.breed === 'yellow' ? new YellowAI(this) : null;
     this.reps = new Map();                // Tracker: Prey -> representation
     this.behavior = Behavior.Idle;
     this.excitement = 0.5; this.panic = 0; this.hunger = 0; this.fear = 0; this.runSpeed = 0; this.currentUtility = 0;
@@ -123,6 +124,7 @@ class LizardAI {
     L.coord = room.tileOf(L.mainBodyChunk.pos);
     this.pather.update(L.coord);
     this.updateTracker();
+    if (this.yellowAI) this.yellowAI.update();
     this.stuckTracker.update();
     if (this.panic > 0) this.panic--;
 

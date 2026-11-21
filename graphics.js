@@ -3,24 +3,13 @@
 //  graphics.js — LizardGraphics.Update (ported: limbs, tail, head, bob, blink, depth rotation)
 //  plus a procedural canvas renderer replacing the sprite/mesh code in DrawSprites.
 // =====================================================================================
-const BLACK = [0.07, 0.08, 0.1];
-
-// tiny trailing "hair" used for the tail tuft / shoulder scales cosmetics
-class Hair {
-  constructor(len, width) { this.len = len; this.width = width; this.pos = new V(); this.vel = new V(); this.init = false; }
-  update(anchor, dir) {
-    const target = anchor.add(dir.mul(this.len));
-    if (!this.init) { this.pos.copy(target); this.init = true; }
-    this.vel.iadd(target.sub(this.pos).mul(0.18)); this.vel.imul(0.75); this.vel.y -= 0.25;
-    this.pos.iadd(this.vel);
-    const d = this.pos.dist(anchor); if (d > this.len) this.pos.copy(anchor.add(C.dirVec(anchor, this.pos).mul(this.len)));
-  }
-}
+const BLACK = [0.07, 0.08, 0.1], WHITE = [1, 1, 1];
+const CAMO_PICKUP = [0.17, 0.2, 0.22];   // the colour a white lizard camouflages to (this room's terrain colour)
 
 class LizardGraphics {
   constructor(lizard) {
     this.lizard = lizard; this.owner = lizard; const P = this.P = lizard.lizardParams;
-    withSeed(lizard.seed, () => { this.iVars = this.generateIvars(); this.cosmeticPick = [rnd(), rnd()]; this.tailColor = this.iVars.tailColor; });
+    withSeed(lizard.seed, () => { this.iVars = this.generateIvars(); this.tailColor = this.iVars.tailColor; });
     // limbs: 0,1 front (chunk 0), 2,3 hind (chunk 2); odd limb's pair is limb-1
     this.limbs = [];
     for (let i = 0; i < 4; i++) this.limbs[i] = new LizardLimb(this, lizard.bodyChunks[i >= 2 ? 2 : 0], i, 2.5, 0.7, 0.99, P.limbSpeed, P.limbQuickness, i % 2 === 1 ? this.limbs[i - 1] : null);
@@ -41,17 +30,18 @@ class LizardGraphics {
     this.tailDirection = C.rnv().mul(Math.random()); this.headColorSetter = 0; this.showDominance = 0; this.flicker = 0;
     this.lookPos = lizard.mainBodyChunk.pos.add(new V(100, 0));
     this.effectColor = lizard.effectColor;
-    // cosmetics (procedural stand-ins for LongShoulderScales / TailTuft)
     this.useSprites = true; this.voiceVisualization = 0; this.lastVoiceVisualization = 0; this.voiceVisualizationIntensity = 0; this.lastVoiceVisualizationIntensity = 0;
-    this.hasShoulder = this.cosmeticPick[0] < 0.55; this.hasTuft = this.cosmeticPick[1] < 0.75;
-    this.shoulderHairs = this.hasShoulder ? Array.from({ length: 6 }, (_, i) => new Hair(14 + i * 1.5, 3)) : [];
-    this.tuftHairs = this.hasTuft ? Array.from({ length: 7 }, (_, i) => new Hair(10 + (i % 3) * 3, 2.2)) : [];
+    this.blackLizardLightUpHead = 0; this.whiteCamoColor = [0, 0, 0]; this.whitePickUpColor = CAMO_PICKUP.slice(); this.whiteCamoColorAmount = 1; this.whiteCamoColorAmountDrag = 1;
+    this.blackSalamander = withSeed(lizard.seed + 77, () => rnd() < 1 / 3);
     this.tongue = lizard.tongue ? Array.from({ length: P.tongueSegments }, () => new GenericBodyPart(this, 1, 1, 0.9, lizard.mainBodyChunk)) : [];
     this.bodyParts = [...this.limbs, ...this.tail, this.head];
+    withSeed(lizard.seed + 1013, () => buildCosmetics(this));   // per-breed cosmetic assignment (cosmetics.js)
+    this.cosBy = {}; for (const o of ['Behind', 'BodySurface', 'BehindHead', 'InFront']) this.cosBy[o] = this.cosmetics.filter(c => c.overlap === o);
   }
+  get BodyAndTailLength() { return this.bodyLength + this.tailLength; }
   generateIvars() {
-    let headSize = C.clampedRandomVariation(0.5, 0.07) * 2; if (rnd() < 0.5) headSize = 1;
-    const fatness = C.clampedRandomVariation(0.5, 0.12) * 2, tailLength = C.clampedRandomVariation(0.5, 0.2) * 2, tailFatness = C.clampedRandomVariation(0.45, 0.1) * 2;
+    let headSize = C.clampedRandomVariation(0.5, 0.07, 0.5) * 2; if (rnd() < 0.5) headSize = 1;
+    const fatness = C.clampedRandomVariation(0.5, 0.12, 0.5) * 2, tailLength = C.clampedRandomVariation(0.5, 0.2, 0.3) * 2, tailFatness = C.clampedRandomVariation(0.45, 0.1, 0.3) * 2;
     let tailColor = 0; if (rnd() > 0.5) tailColor = rnd();
     return { headSize, fatness, tailLength, tailFatness, tailColor };
   }
@@ -141,12 +131,19 @@ class LizardGraphics {
 
     this.updateTongue();
 
-    // cosmetics
-    const sp = this.spinePoint(0.12);
-    this.shoulderHairs.forEach((h, i) => { const side = i % 2 ? 1 : -1; h.update(sp.add(sp.dir.mul(-2 * i)), C.perp(sp.dir).mul(side * 0.5).add(sp.dir.mul(-0.9)).normalized()); });
-    const tip = this.tail[this.tail.length - 1], pr = this.tail[this.tail.length - 2] || this.tail[0];
-    const td = C.dirVec(pr.pos, tip.pos);
-    this.tuftHairs.forEach((h, i) => h.update(tip.pos, C.rotate(td, (i - 3) * 22)));
+    // white-lizard camouflage / black-lizard head light-up (LizardGraphics.Update)
+    if (L.breed === 'white') {
+      if (L.dead) this.whiteCamoColorAmount = lerp(this.whiteCamoColorAmount, 0.3, 0.01);
+      else {
+        if (L.animation === LAnim.ShootTongue) this.whiteCamoColorAmountDrag = 0;
+        else if (rnd() < 0.1) this.whiteCamoColorAmountDrag = lerp(this.whiteCamoColorAmountDrag, invLerp(0.65, 0.4, L.AI.runSpeed), rnd());
+        this.whiteCamoColorAmount = clamp(lerp(this.whiteCamoColorAmount, this.whiteCamoColorAmountDrag, 0.1 * rnd()), 0.15, 1);
+        this.whiteCamoColor = C.lerpCol(this.whiteCamoColor, this.whitePickUpColor, 0.1);
+      }
+    } else if (L.breed === 'black') {
+      if (L.voice.MakingASound || L.bubble > 0) this.blackLizardLightUpHead = Math.min(this.blackLizardLightUpHead + 0.1, 1); else this.blackLizardLightUpHead *= 0.9;
+    }
+    for (const c of this.cosmetics) c.update();
   }
   updateTongue() {
     const L = this.lizard, tg = L.tongue, dp = this.drawPositions, n = this.tongue.length; if (!tg) return;
@@ -189,11 +186,6 @@ class LizardGraphics {
     const d = tip.dist(last), mid = tip.lerpTo(last, 0.5), ang = Math.atan2(last.y - tip.y, last.x - tip.x);
     ctx.fillStyle = C.rgb(black); ctx.beginPath(); ctx.ellipse(mid.x, mid.y, Math.max(0.1, d / 2), L.breed === 'blue' ? 2 : 2.5, ang, 0, 7); ctx.fill();
   }
-  spinePoint(f) {   // point on the body line (0 = neck .. 1 = hips) with its forward direction
-    const dp = this.drawPositions, a = dp[0][0], b = dp[2][0];
-    return Object.assign(a.lerpTo(b, f), { dir: C.dirVec(b, a) });
-  }
-
   updateTailSegment(i, stiffness) {
     const L = this.lizard, P = this.P, t = this.tail, dp = this.drawPositions;
     t[i].update();
@@ -208,18 +200,78 @@ class LizardGraphics {
   }
 
   // ---------------- colours ----------------
+  get salamanderColor() { return this.blackSalamander ? C.lerpCol(BLACK, this.effectColor, 0.1) : C.lerpCol([0.9, 0.9, 0.95], this.effectColor, 0.06); }
+  get headLightsUpFromNoise() { return this.lizard.breed === 'black'; }
+  headColor1() {
+    const T = this.lizard.breed;
+    if (T === 'white') return C.lerpCol(WHITE, this.whiteCamoColor, this.whiteCamoColorAmount);
+    if (this.headLightsUpFromNoise) return C.lerpCol(BLACK, [0.5, 0.5, 0.5], this.blackLizardLightUpHead);
+    if (T === 'salamander') return this.salamanderColor;
+    return BLACK;
+  }
+  headColor2() {
+    const T = this.lizard.breed;
+    if (T === 'white') return C.lerpCol(BLACK, this.whiteCamoColor, this.whiteCamoColorAmount);
+    if (this.headLightsUpFromNoise) return C.lerpCol(BLACK, [0.5, 0.5, 0.5], this.blackLizardLightUpHead);
+    if (T === 'salamander') return this.salamanderColor;
+    return this.effectColor;
+  }
   headColor(ts) {
     let a = 1 - Math.pow(0.5 + 0.5 * Math.sin(lerp(this.lastBlink, this.blink, ts) * 2 * Math.PI), 1.5 + this.lizard.AI.excitement * 1.5);
     if (this.headColorSetter !== 0) a = lerp(a, this.headColorSetter > 0 ? 1 : 0, Math.abs(this.headColorSetter));
     a = lerp(a, Math.pow(Math.max(0, lerp(this.lastVoiceVisualization, this.voiceVisualization, ts)), 0.75), lerp(this.lastVoiceVisualizationIntensity, this.voiceVisualizationIntensity, ts));
-    return C.lerpCol(BLACK, this.effectColor, a);
+    return C.lerpCol(this.headColor1(), this.headColor2(), a);
   }
+  dynamicBodyColor(f) {
+    const T = this.lizard.breed;
+    if (T === 'white') return C.lerpCol(WHITE, this.whiteCamoColor, this.whiteCamoColorAmount);
+    if (T === 'salamander') return this.salamanderColor;
+    return BLACK;
+  }
+  get baseColor() { return this.dynamicBodyColor(0); }   // ColorBody(): body circles, mesh and limb outlines
   bodyColor(f) {
-    if (f < this.bodyLength / (this.bodyLength + this.tailLength) || this.tailColor === 0) return BLACK;
-    const v = invLerp(this.bodyLength / (this.bodyLength + this.tailLength), 1, f);
+    const T = this.lizard.breed;
+    if (T === 'white') return this.dynamicBodyColor(f);
+    if (T === 'salamander') return this.salamanderColor;
+    const bt = this.bodyLength / this.BodyAndTailLength;
+    if (f < bt || this.tailColor === 0) return BLACK;
+    const v = invLerp(bt, 1, f);
     let f2 = clamp01(invLerp(this.P.tailColorationStart, 0.95, v));
     f2 = Math.pow(f2, this.P.tailColorationExponent) * this.tailColor;
     return C.lerpCol(BLACK, this.effectColor, f2);
+  }
+
+  headRotation(ts) {
+    const L = this.lizard, dp = this.drawPositions, P = this.P;
+    return C.aim(dp[0][1].lerpTo(dp[0][0], ts), this.head.lastPos.lerpTo(this.head.pos, ts)) +
+      P.jawOpenAngle * (1 - P.jawOpenLowerJawFac) * clamp01(lerp(L.lastJawOpen, L.JawOpen, ts)) * lerp(this.lastHeadDepthRotation, this.headDepthRotation, ts);
+  }
+  // LizardGraphics.SpinePosition: s = 0 (neck) .. 1 (tail tip)
+  spinePosition(s, ts) {
+    const L = this.lizard, tail = this.tail, tl = tail.length, tp = i => tail[i].lastPos.lerpTo(tail[i].pos, ts);
+    const num = L.bodyChunkConnections[0].distance + L.bodyChunkConnections[1].distance, split = num / (num + this.tailLength);
+    let v, a, v2, v3, b, t;
+    if (s < split) {
+      const n2 = invLerp(0, split, s), n3 = Math.floor(n2 * 4 - 1), n4 = Math.floor(n2 * 4);
+      if (n3 < 0) { v = this.bodyPosition(0, ts).lerpTo(this.head.lastPos.lerpTo(this.head.pos, ts), 0.5); a = this.head.rad; }
+      else { v = this.bodyPosition(n3, ts); a = this.bodyChunkDisplayRad(n3 < 2 ? 1 : 2) * this.iVars.fatness; }
+      v2 = n4 + 1 >= 4 ? tp(0) : this.bodyPosition(n4 + 1, ts);
+      v3 = this.bodyPosition(n4, ts); b = this.bodyChunkDisplayRad(n4 < 2 ? 1 : 2);
+      t = invLerp(n3 + 1, n4 + 1, n2 * 4);
+    } else {
+      const n5 = invLerp(split, 1, s), n6 = Math.floor(n5 * tl - 1); let n7 = Math.floor(n5 * tl); if (n7 > tl - 1) n7 = tl - 1;
+      if (n6 < 0) { v = this.bodyPosition(3, ts); a = this.bodyChunkDisplayRad(2) * this.iVars.fatness; }
+      else { v = tp(n6); a = tail[n6].stretchedRad * this.iVars.fatness * this.iVars.tailFatness; }
+      v2 = tp(Math.min(n7 + 1, tl - 1)); v3 = tp(n7); b = tail[n7].stretchedRad;
+      t = invLerp(n6 + 1, n7 + 1, n5 * tl);
+    }
+    let dir = v3.sub(v).lerpTo(v2.sub(v3), t).normalized();
+    if (dir.x === 0 && dir.y === 0) dir = tail[tl - 1].pos.sub(tail[tl - 2].pos).normalized();
+    const perp = C.perp(dir), rad = lerp(a, b, t);
+    let f = lerp(this.lastDepthRotation, this.depthRotation, ts);
+    f = Math.pow(Math.abs(f), lerp(1.2, 0.3, Math.pow(s, 0.5))) * sign(f);
+    const pos = v.lerpTo(v3, t);
+    return { s, pos, outerPos: pos.add(perp.mul(f * rad)), dir, perp, depthRotation: f, rad };
   }
 
   // ---------------- rendering ----------------
@@ -258,7 +310,7 @@ class LizardGraphics {
     val += 9 * (2 - Math.trunc(clamp(Math.abs(l.flip) * 3, 0, 2)));
     if (i >= 2) val += 27;
     const nm = n => n + String(val).padStart(2, '0'), rot = C.aim(sh, foot) - 90, sy = sign(l.flip) * P.limbThickness;
-    Atlas.draw(ctx, nm('LizardArm_'), foot.x, foot.y, rot, 1, sy, BLACK);
+    Atlas.draw(ctx, nm('LizardArm_'), foot.x, foot.y, rot, 1, sy, this.baseColor);
     Atlas.draw(ctx, nm('LizardArmColor_'), foot.x, foot.y, rot, 1, sy, this.effectColor);
   }
 
@@ -282,19 +334,12 @@ class LizardGraphics {
     this.circle(ctx, foot, thick * 0.6, C.rgb(BLACK));
   }
 
-  drawHairs(ctx, hairs, anchorFn, color) {
-    ctx.fillStyle = color;
-    hairs.forEach((h, i) => {
-      const a = anchorFn(i), n = C.perp(C.dirVec(a, h.pos)).mul(h.width * 0.5);
-      ctx.beginPath(); ctx.moveTo(a.x + n.x, a.y + n.y); ctx.lineTo(h.pos.x, h.pos.y); ctx.lineTo(a.x - n.x, a.y - n.y); ctx.closePath(); ctx.fill();
-    });
-  }
-
   draw(ctx, ts) {
     const L = this.lizard, P = this.P, dp = this.drawPositions, iv = this.iVars;
-    const col = C.rgb(BLACK);
+    const col = C.rgb(this.baseColor);
     const dpL = i => dp[i][1].lerpTo(dp[i][0], ts);
     const headPos = this.head.lastPos.lerpTo(this.head.pos, ts);
+    for (const c of this.cosBy.Behind) c.draw(ctx, ts);
     // behind-the-body limbs
     this.drawLimb(ctx, 0, ts); this.drawLimb(ctx, 2, ts);
     // body spine: neck, 4 body points, tail
@@ -318,14 +363,14 @@ class LizardGraphics {
       const f = lerp(this.bodyLength / (this.bodyLength + this.tailLength), 1, (k + 1) / this.tail.length);
       this.strip(ctx, pts, rads, C.rgb(this.bodyColor(f)), 6 + k, 7 + k);
     }
-    // cosmetics
-    if (this.hasShoulder) this.drawHairs(ctx, this.shoulderHairs, i => { const s = this.spinePoint(0.12); return s.add(s.dir.mul(-2 * i)); }, C.rgb(this.effectColor, 0.95));
-    if (this.hasTuft) this.drawHairs(ctx, this.tuftHairs, () => tp[tp.length - 1], C.rgb(this.effectColor, 0.95));
+    for (const c of this.cosBy.BodySurface) c.draw(ctx, ts);
     // front-side limbs
     this.drawLimb(ctx, 1, ts); this.drawLimb(ctx, 3, ts);
+    for (const c of this.cosBy.BehindHead) c.draw(ctx, ts);
     // head
     this.drawHead(ctx, ts, headPos);
     this.drawTongue(ctx, ts);
+    for (const c of this.cosBy.InFront) c.draw(ctx, ts);
   }
 
   drawHeadSprite(ctx, ts, headPos) {
@@ -337,8 +382,8 @@ class LizardGraphics {
     const d0 = dp[0][1].lerpTo(dp[0][0], ts), p = headPos.lerpTo(d0, 0.2);
     const rot = C.aim(d0, headPos), n = C.perp(d0.sub(headPos)).normalized();
     const hs = P.headSize * this.iVars.headSize, v = String(3 - Math.trunc(Math.abs(num) * 3.9));
-    const hc = this.headColor(ts), white = [1, 1, 1];
-    const parts = [['LizardJaw', hg[0], hc], ['LizardLowerTeeth', hg[1], white], ['LizardUpperTeeth', hg[2], white], ['LizardHead', hg[3], hc], ['LizardEyes', hg[4], BLACK]];
+    const hc = this.headColor(ts), teeth = BLACK;
+    const parts = [['LizardJaw', hg[0], hc], ['LizardLowerTeeth', hg[1], teeth], ['LizardUpperTeeth', hg[2], teeth], ['LizardHead', hg[3], hc], ['LizardEyes', hg[4], BLACK]];
     parts.forEach(([nm, g, col], k) => {
       const lowerSide = k <= 1, f = lowerSide ? P.jawOpenLowerJawFac : 1 - P.jawOpenLowerJawFac, dir = lowerSide ? -1 : 1;
       let x = p.x, y = p.y, r = rot;

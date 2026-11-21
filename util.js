@@ -26,7 +26,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const clamp01 = v => clamp(v, 0, 1);
 const lerp = (a, b, t) => a + (b - a) * clamp01(t);              // Unity Mathf.Lerp clamps t
 const invLerp = (a, b, v) => (a === b ? 0 : clamp01((v - a) / (b - a)));
-const lerpMap = (v, a, b, c, d) => lerp(c, d, invLerp(a, b, v));
+const lerpMap = (v, a, b, c, d, e = 1) => lerp(c, d, Math.pow(invLerp(a, b, v), e));
 const sign = v => (v < 0 ? -1 : 1);                               // Mathf.Sign(0) == 1
 const moveTowardsF = (a, b, d) => (Math.abs(b - a) <= d ? b : a + Math.sign(b - a) * d);
 const lerpAndTick = (a, b, l, tick) => moveTowardsF(lerp(a, b, l), b, tick);
@@ -56,7 +56,7 @@ class V {
 
 // ---- RWCustom ----
 const C = {
-  dirVec(a, b) { const dx = b.x - a.x, dy = b.y - a.y, m = Math.hypot(dx, dy); return m > 1e-9 ? new V(dx / m, dy / m) : new V(0, 0); },
+  dirVec(a, b) { const dx = b.x - a.x, dy = b.y - a.y, m = Math.hypot(dx, dy); return m > 1e-9 ? new V(dx / m, dy / m) : new V(0, 1); },
   distLess(a, b, d) { const dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy < d * d; },
   perp(v) { return new V(-v.y, v.x); },
   aim(a, b) { return Math.atan2(b.x - a.x, b.y - a.y) * RAD2DEG; },
@@ -74,8 +74,11 @@ const C = {
   moveTowards(a, b, max) { const d = b.sub(a), m = d.mag; return (m <= max || m < 1e-9) ? b.clone() : a.add(d.mul(max / m)); },
   manhattan(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); },
   sameTile(a, b) { return !!a && !!b && a.x === b.x && a.y === b.y; },
-  wrappedRandomVariation(center, dev) { return (((center + (rnd() * 2 - 1) * dev) % 1) + 1) % 1; },
-  clampedRandomVariation(f, d) { return clamp01(f + (rnd() * 2 - 1) * d); },
+  sCurve(x, k) { x = x * 2 - 1; if (x < 0) { x = Math.abs(1 + x); return k * x / (k - x + 1) * 0.5; } k = -1 - k; return 0.5 + k * x / (k - x + 1) * 0.5; },
+  randomDeviation(k) { return C.sCurve(rnd() * 0.5, k) * 2 * (rnd() < 0.5 ? 1 : -1); },
+  wrappedRandomVariation(f, d, k) { const n = f + C.randomDeviation(k) * d + 1; return n - Math.floor(n); },
+  clampedRandomVariation(f, d, k) { return clamp01(f + C.randomDeviation(k) * d); },
+  pushFromHalf(v, e) { if (v === 0.5) return 0.5; return v < 0.5 ? lerpMap(v, 0, 0.5, 0, 0.5, e) : lerpMap(v, 1, 0.5, 1, 0.5, e); },
   hsl2rgb(h, s, l) {
     h = ((h % 1) + 1) % 1;
     const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
